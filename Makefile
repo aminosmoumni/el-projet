@@ -1,23 +1,10 @@
-prog: main.o minimap.o collisionBB.o collisionPP.o platform.o animation.o
-	gcc main.o minimap.o collisionBB.o collisionPP.o platform.o animation.o -o prog -lSDL2 -lSDL2_image
+prog: main.o menu.o
+	gcc main.o menu.o -o prog -lSDL2 -lSDL2_image -lSDL2_mixer
 
-main.o: main.c
+
+main.o: main.c menu.h
 	gcc -c main.c
 
-minimap.o: minimap.c
-	gcc -c minimap.c
 
-collisionBB.o: collisionBB.c
-	gcc -c collisionBB.c
-
-collisionPP.o: collisionPP.c
-	gcc -c collisionPP.c
-
-platform.o: platform.c
-	gcc -c platform.c
-
-animation.o: animation.c
-	gcc -c animation.c
-
-clean:
-	rm -f *.o prog
+menu.o: menu.c menu.h
+	gcc -c menu.c
