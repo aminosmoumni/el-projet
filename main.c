@@ -1,43 +1,76 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
-#include "joueur.h"
-int main(int argc,char *argv[]){
- SDL_Window *window=NULL;
- SDL_Renderer *renderer=NULL;
- SDL_Event event;
- 
- int running=1;
- 
- 
- if(SDL_Init(SDL_INIT_VIDEO)!=0)
- {
-  printf("erreur %s \n",SDL_GetError());
-  return 1;
-  }
-  printf("photo existe");
- if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
+#include "ennemi.h"
+
+void afficherVieJoueur(SDL_Renderer *renderer, int vie, int vieMax)
 {
-    printf("Erreur IMG_Init: %s\n", IMG_GetError());
-    return 1;
+    SDL_Rect fond;
+    fond.x = 10;
+    fond.y = 10;
+    fond.w = 200;
+    fond.h = 16;
+
+    SDL_Rect barre;
+    barre.x = 10;
+    barre.y = 10;
+    barre.w = (vie * 200) / vieMax;
+    barre.h = 16;
+
+    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
+    SDL_RenderFillRect(renderer, &fond);
+
+    if (vie > 60)
+        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
+    else if (vie > 30)
+        SDL_SetRenderDrawColor(renderer, 255, 140, 0, 255);
+    else
+        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
+
+    SDL_RenderFillRect(renderer, &barre);
 }
-  
-  window=SDL_CreateWindow("welcome to the game",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED,800,600,SDL_WINDOW_SHOWN);
-  renderer=SDL_CreateRenderer(window,-1,SDL_RENDERER_ACCELERATED|SDL_RENDERER_PRESENTVSYNC);
-  
-  
-  joueur j;
-  init_j(&j,renderer);
-  
-  printf("photo existe");
-  int posinit=j.posscreen.y;
-  Uint32 lasttime=SDL_GetTicks();
-  
-  while(running){
-   Uint32 currenttime =SDL_GetTicks();
-   Uint32 dt=currenttime-lasttime;
-   lasttime=currenttime; 
-   while (SDL_PollEvent(&event))
+
+int main(int argc, char *argv[])
+{
+    SDL_Init(SDL_INIT_VIDEO);
+    IMG_Init(IMG_INIT_PNG);
+
+    SDL_Window *window = SDL_CreateWindow(
+        "Test Ennemi",
+        SDL_WINDOWPOS_CENTERED,
+        SDL_WINDOWPOS_CENTERED,
+        800, 600,
+        0
+    );
+
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    // ======================
+    // Joueur
+    // ======================
+    SDL_Rect joueur;
+    joueur.x = 100;
+    joueur.y = 100;
+    joueur.w = 40;
+    joueur.h = 40;
+
+    int vieJoueur      = 100;
+    int vieMaxJoueur   = 100;
+    int cooldownJoueur = 0;
+
+    // ======================
+    // Ennemi
+    // ======================
+    Ennemi e;
+    initEnnemi(&e, renderer, "guard.png", 300, 200, 96, 96);
+
+    int running = 1;
+    SDL_Event event;
+
+    while (running)
+    {
+        // EVENTS
+        while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_QUIT)
                 running = 0;
@@ -46,52 +79,69 @@ int main(int argc,char *argv[]){
             {
                 switch (event.key.keysym.sym)
                 {
-                    case SDLK_ESCAPE:
-                        running = 0;
-                        break;
+                    case SDLK_RIGHT: joueur.x += 10; break;
+                    case SDLK_LEFT:  joueur.x -= 10; break;
+                    case SDLK_UP:    joueur.y -= 10; break;
+                    case SDLK_DOWN:  joueur.y += 10; break;
 
-                    case SDLK_RIGHT:
-                        j.acceleration = 40;
-                        j.direction = DROITE;
+                    // ESPACE = joueur attaque l'ennemi
+                    case SDLK_SPACE:
+                        if (collisionEnnemi(joueur, &e) && e.cooldownBlessure == 0)
+                        {
+                            blesserEnnemi(&e, 10);
+                            e.cooldownBlessure = 60;
+                        }
                         break;
-
-                    case SDLK_LEFT:
-                        j.acceleration = -40;
-                        j.direction = GAUCHE;
-                        break;
-
-                    case SDLK_UP:
-                        if (j.up == 0)
-                            j.up = 1;
-                        break;
-                }
-            }
-            if (event.type == SDL_KEYUP)
-            {
-                if (event.key.keysym.sym == SDLK_RIGHT ||
-                    event.key.keysym.sym == SDLK_LEFT)
-                {
-                    j.acceleration = 0;
-                    j.vitesse = 0;
                 }
             }
         }
-        dep_j(&j ,dt);  
-        saut_j(&j,dt,posinit);
-        anim_j(&j);             
 
+        // UPDATE
+        deplacerEnnemi(&e);
+
+        if (e.cooldownBlessure > 0)
+            e.cooldownBlessure--;
+
+        if (cooldownJoueur > 0)
+            cooldownJoueur--;
+
+        // Ennemi attaque joueur par contact
+        if (collisionEnnemi(joueur, &e) && cooldownJoueur == 0)
+        {
+            vieJoueur -= e.degat;
+            cooldownJoueur = 60;
+
+            if (vieJoueur <= 0)
+            {
+                vieJoueur = 0;
+                printf("Joueur mort !\n");
+                running = 0;
+            }
+        }
+
+        // RENDER
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
 
-        affich_j(&j, renderer);
+        // Joueur (bleu)
+        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
+        SDL_RenderFillRect(renderer, &joueur);
+
+        // Ennemi
+        afficherEnnemi(&e, renderer);
+        afficherVieEnnemi(&e, renderer);
+
+        // Vie joueur
+        afficherVieJoueur(renderer, vieJoueur, vieMaxJoueur);
 
         SDL_RenderPresent(renderer);
+        SDL_Delay(16);
     }
-    liberer_j(&j);
 
+    // CLEAN
+    libererEnnemi(&e);
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
-
     IMG_Quit();
     SDL_Quit();
 
