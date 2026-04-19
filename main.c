@@ -1,147 +1,120 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <stdio.h>
-#include "ennemi.h"
+#include "minimap.h"
+#include "collisionPP.h"
+#include "collisionBB.h"
+#include "platform.h"
+#include "animation.h"
 
-void afficherVieJoueur(SDL_Renderer *renderer, int vie, int vieMax)
-{
-    SDL_Rect fond;
-    fond.x = 10;
-    fond.y = 10;
-    fond.w = 200;
-    fond.h = 16;
-
-    SDL_Rect barre;
-    barre.x = 10;
-    barre.y = 10;
-    barre.w = (vie * 200) / vieMax;
-    barre.h = 16;
-
-    SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
-    SDL_RenderFillRect(renderer, &fond);
-
-    if (vie > 60)
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, 255);
-    else if (vie > 30)
-        SDL_SetRenderDrawColor(renderer, 255, 140, 0, 255);
-    else
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-
-    SDL_RenderFillRect(renderer, &barre);
-}
-
-int main(int argc, char *argv[])
+int main()
 {
     SDL_Init(SDL_INIT_VIDEO);
     IMG_Init(IMG_INIT_PNG);
 
-    SDL_Window *window = SDL_CreateWindow(
-        "Test Ennemi",
+    SDL_Window* w = SDL_CreateWindow("MINIMAP",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        800, 600,
-        0
-    );
+        800,600,0);
 
-    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    SDL_Renderer* r = SDL_CreateRenderer(w,-1,0);
 
-    // ======================
-    // Joueur
-    // ======================
-    SDL_Rect joueur;
-    joueur.x = 100;
-    joueur.y = 100;
-    joueur.w = 40;
-    joueur.h = 40;
+    /* ===== PLAYER ===== */
+    SDL_Rect player = {100,100,50,50};
+    SDL_Texture* playerTex = IMG_LoadTexture(r,"player_minimap.png");
 
-    int vieJoueur      = 100;
-    int vieMaxJoueur   = 100;
-    int cooldownJoueur = 0;
+    /* ===== CAMERA ===== */
+    SDL_Rect camera = {0,0,800,600};
 
-    // ======================
-    // Ennemi
-    // ======================
-    Ennemi e;
-    initEnnemi(&e, renderer, "guard.png", 300, 200, 96, 96);
+    /* ===== MINIMAP ===== */
+    Minimap m;
+    m.backgroundTexture = IMG_LoadTexture(r,"background_minimap.png");
+    m.playerTexture = IMG_LoadTexture(r,"player_minimap.png");
+    m.minimapPosition = (SDL_Rect){600,20,150,100};
 
-    int running = 1;
-    SDL_Event event;
+    int redim = 20;
 
-    while (running)
+    /* ===== MASK ===== */
+    SDL_Surface* mask = IMG_Load("backgroundMasque.png");
+
+    /* ===== PLATFORM ===== */
+    Platform p;
+    p.pos = (SDL_Rect){200,300,120,20};
+    p.direction = 1;
+
+    /* ===== ANIMATION ===== */
+    Animation a;
+    a.frame = 0;
+    a.timer = 0; 
+    a.pos = (SDL_Rect){0,0,800,600};
+
+    a.tab[0] = IMG_LoadTexture(r,"bg1.png");
+    a.tab[1] = IMG_LoadTexture(r,"bg2.png");
+    a.tab[2] = IMG_LoadTexture(r,"bg3.png");
+
+    int run = 1;
+    SDL_Event e;
+
+    while(run)
     {
-        // EVENTS
-        while (SDL_PollEvent(&event))
+        while(SDL_PollEvent(&e))
         {
-            if (event.type == SDL_QUIT)
-                running = 0;
-
-            if (event.type == SDL_KEYDOWN)
-            {
-                switch (event.key.keysym.sym)
-                {
-                    case SDLK_RIGHT: joueur.x += 10; break;
-                    case SDLK_LEFT:  joueur.x -= 10; break;
-                    case SDLK_UP:    joueur.y -= 10; break;
-                    case SDLK_DOWN:  joueur.y += 10; break;
-
-                    // ESPACE = joueur attaque l'ennemi
-                    case SDLK_SPACE:
-                        if (collisionEnnemi(joueur, &e) && e.cooldownBlessure == 0)
-                        {
-                            blesserEnnemi(&e, 10);
-                            e.cooldownBlessure = 60;
-                        }
-                        break;
-                }
-            }
+            if(e.type == SDL_QUIT)
+                run = 0;
         }
 
-        // UPDATE
-        deplacerEnnemi(&e);
+        /* ===== CLAVIER ===== */
+        const Uint8* k = SDL_GetKeyboardState(NULL);
 
-        if (e.cooldownBlessure > 0)
-            e.cooldownBlessure--;
+        if(k[SDL_SCANCODE_RIGHT]) player.x += 3;
+        if(k[SDL_SCANCODE_LEFT])  player.x -= 3;
+        if(k[SDL_SCANCODE_UP])    player.y -= 3;
+        if(k[SDL_SCANCODE_DOWN])  player.y += 3;
 
-        if (cooldownJoueur > 0)
-            cooldownJoueur--;
+        /* ===== UPDATE PLATFORM ===== */
+        updatePlatform(&p);
 
-        // Ennemi attaque joueur par contact
-        if (collisionEnnemi(joueur, &e) && cooldownJoueur == 0)
-        {
-            vieJoueur -= e.degat;
-            cooldownJoueur = 60;
+        /* ===== COLLISION BB ===== */
+        int collBB = collisionBB(player,p.pos);
+        if(collBB)
+            player.y = p.pos.y - player.h;
 
-            if (vieJoueur <= 0)
-            {
-                vieJoueur = 0;
-                printf("Joueur mort !\n");
-                running = 0;
-            }
-        }
+        /* ===== COLLISION PIXEL ===== */
+        int collPP = collisionPP(mask, player.x + player.w/2, player.y + player.h);
 
-        // RENDER
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
+        /* ===== ANIMATION ===== */
+        updateAnimation(&a, collBB || collPP);
 
-        // Joueur (bleu)
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
-        SDL_RenderFillRect(renderer, &joueur);
+        /* ===== MINIMAP ===== */
+        MAJMinimap(player,&m,camera,redim);
 
-        // Ennemi
-        afficherEnnemi(&e, renderer);
-        afficherVieEnnemi(&e, renderer);
+        /* ===== RENDER ===== */
+        SDL_RenderClear(r);
 
-        // Vie joueur
-        afficherVieJoueur(renderer, vieJoueur, vieMaxJoueur);
+        afficherAnimation(r,a);
 
-        SDL_RenderPresent(renderer);
-        SDL_Delay(16);
+        SDL_SetRenderDrawColor(r,255,0,0,255);
+        SDL_RenderFillRect(r,&p.pos);
+
+        SDL_RenderCopy(r, playerTex, NULL, &player);
+
+        afficher(r,m);
+
+        SDL_RenderPresent(r);
     }
 
-    // CLEAN
-    libererEnnemi(&e);
-    SDL_DestroyRenderer(renderer);
-    SDL_DestroyWindow(window);
+    /* ===== FREE ===== */
+    SDL_FreeSurface(mask);
+    Liberer(&m);
+
+    SDL_DestroyTexture(playerTex);
+    SDL_DestroyTexture(a.tab[0]);
+    SDL_DestroyTexture(a.tab[1]);
+    SDL_DestroyTexture(a.tab[2]);
+
+    SDL_DestroyRenderer(r);
+    SDL_DestroyWindow(w);
+
     IMG_Quit();
     SDL_Quit();
 
